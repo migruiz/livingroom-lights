@@ -1,0 +1,20 @@
+sudo: required
+
+
+services:
+  - docker
+
+env:
+  global:
+    - PI_APP=gogsdispatch
+
+
+script:
+- docker pull soniab/$PI_APP || true
+- docker build --cache-from soniab/$PI_APP  -t soniab/$PI_APP . || travis_terminate 1
+- echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin || travis_terminate 1
+- docker push soniab/$PI_APP || travis_terminate 1
+
+notifications:
+   email:
+      - sonia@gmail.com

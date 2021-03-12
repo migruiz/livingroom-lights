@@ -6,5 +6,6 @@
     "name": "piscos"
   },
   "dependencies": {
+    "mqtt": "^4.2.6"
   }
 }

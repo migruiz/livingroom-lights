@@ -11,7 +11,7 @@ http.createServer((request, response) => {
   }).on('end', async () => {
     body = Buffer.concat(body).toString();
 
-    const hookInfo = JSON.parse(body)
+    //const hookInfo = JSON.parse(body)
 
     console.log("data",body)
     response.end();

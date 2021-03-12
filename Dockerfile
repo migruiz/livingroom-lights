@@ -1,19 +1,17 @@
-FROM node:8.16.0-alpine
+FROM balenalib/raspberrypi3-alpine-node:8-latest
+RUN [ "cross-build-start" ]
 
-RUN apk add --no-cache --upgrade bash git openssh subversion
 
-RUN mkdir /app/
-COPY app/package.json  /app/package.json
+RUN mkdir /App/
+COPY App/package.json  /App/package.json
 
-RUN cd /app \
+
+RUN cd /App \
 && npm  install 
 
 
-COPY app /app
+COPY App /App
 
-COPY syncToSVN.sh syncToSVN.sh 
-COPY docker-entrypoint.sh docker-entrypoint.sh 
-RUN chmod +x /docker-entrypoint.sh
-RUN chmod +x /syncToSVN.sh
+RUN [ "cross-build-end" ]  
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["node","/App/app.js"]

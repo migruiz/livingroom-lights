@@ -19,7 +19,7 @@ http.createServer((request, response) => {
     const client  = mqtt.connect(process.env.MQTTLOCAL);
     client.on('connect', function () {
       console.log('entered');
-        client.publish('livingroom/wall/light', brightnessValue);
+        client.publish('livingroom/wall/light', brightnessValue.toString());
         client.end();
         response.status(200);
         response.end();

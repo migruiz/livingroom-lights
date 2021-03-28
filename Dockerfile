@@ -12,8 +12,8 @@ RUN mkdir /python-broadlink
 COPY python-broadlink /python-broadlink
 
 RUN cd /python-broadlink \
-&& python -m pip install setuptools \
-&& python setup.py install
+&& python3 -m pip install setuptools \
+&& python3 setup.py install
 
 RUN chmod +x /python-broadlink/cli/broadlink_cli
 RUN chmod +x /python-broadlink/cli/broadlink_discovery

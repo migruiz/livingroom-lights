@@ -3,7 +3,9 @@ RUN [ "cross-build-start" ]
 
 
 
-RUN git
+
+RUN apt-get update && \
+apt-get install -yqq --no-install-recommends python3 python3-pip
 
 
 RUN mkdir /python-broadlink

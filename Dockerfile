@@ -3,8 +3,7 @@ RUN [ "cross-build-start" ]
 
 
 
-RUN apt-get update && \
-apt-get install -yqq --no-install-recommends python3 python3-pip
+RUN git
 
 
 RUN mkdir /python-broadlink
@@ -13,13 +12,13 @@ COPY python-broadlink /python-broadlink
 
 RUN cd /python-broadlink \
 && python3 -m pip install setuptools \
+&& python3 -m pip install pycparser \
+&& python3 -m pip install cffi \
+&& python3 -m pip install cryptography \
 && python3 setup.py install
 
 RUN chmod +x /python-broadlink/cli/broadlink_cli
 RUN chmod +x /python-broadlink/cli/broadlink_discovery
-
-RUN curl -sL https://deb.nodesource.com/setup_8.x | bash - \
-&& apt-get install -yqq --no-install-recommends nodejs   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /App/
 

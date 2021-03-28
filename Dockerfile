@@ -1,31 +1,40 @@
-FROM balenalib/raspberrypi3-alpine-node:8-latest
+FROM balenalib/raspberrypi3-debian
 RUN [ "cross-build-start" ]
 
 
-RUN apk add --update make python3-dev python3 g++ 
+
+RUN apt-get update && \
+apt-get install -yqq --no-install-recommends g++ gcc make wget python-dev && apt -y install python-pip && rm -rf /var/lib/apt/lists/*
+
 
 RUN mkdir /python-broadlink
 
 COPY python-broadlink /python-broadlink
 
 RUN cd /python-broadlink \
-&& python3 -m pip install pycrypto  \
-&& python3 -m pip install netaddr \
-&& python3 setup.py install
+&& python -m pip install pycrypto  \
+&& python -m pip install netaddr \
+&& python setup.py install
 
 RUN chmod +x /python-broadlink/cli/broadlink_cli
 RUN chmod +x /python-broadlink/cli/broadlink_discovery
 
+RUN curl -sL https://deb.nodesource.com/setup_8.x | bash - \
+&& apt-get install -yqq --no-install-recommends nodejs   && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir /App/
+
+
 COPY App/package.json  /App/package.json
 
-
-RUN cd /App \
+RUN cd /App/ \
 && npm  install 
-
 
 COPY App /App
 
 RUN [ "cross-build-end" ]  
 
 ENTRYPOINT ["node","/App/app.js"]
+
+
+

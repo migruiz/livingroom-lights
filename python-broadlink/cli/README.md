@@ -78,8 +78,3 @@ Get Energy Consumption (For a SmartPlug) :
 ```
 broadlink_cli --device @BEDROOM.device --energy
 ```
-
-Once joined to the Broadlink provisioning Wi-Fi, configure it with your Wi-Fi details:
-```
-broadlink_cli --joinwifi MySSID MyWifiPassword
-```

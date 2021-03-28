@@ -5,7 +5,7 @@ client.on('connect', function () {
   console.log('connected');
   client.subscribe('livingroom/wall/light/httpbrightnessvalue');
   client.on("message", function (topic, message) {
-    const brightnessPercentage =  parseInt(message.brightnessPercentage);
+    const brightnessPercentage =  parseInt(message);
     const brightnessValue = Math.round(1024 * brightnessPercentage / 100)
     const brightnessValueString = brightnessValue.toString()
     client.publish('livingroom/wall/light',brightnessValueString);

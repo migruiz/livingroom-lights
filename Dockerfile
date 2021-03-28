@@ -9,9 +9,9 @@ RUN mkdir /python-broadlink
 COPY python-broadlink /python-broadlink
 
 RUN cd /python-broadlink \
-&& python -m pip install pycrypto  \
-&& python -m pip install netaddr \
-&& python setup.py install
+&& python3 -m pip install pycrypto  \
+&& python3 -m pip install netaddr \
+&& python3 setup.py install
 
 RUN chmod +x /python-broadlink/cli/broadlink_cli
 RUN chmod +x /python-broadlink/cli/broadlink_discovery

@@ -14,11 +14,7 @@ COPY python-broadlink /python-broadlink
 RUN cd /python-broadlink \
 && python -m pip install pycrypto  \
 && python -m pip install netaddr \
-&& python -m pip install setuptools \
-&& python setup.py install
-
-RUN chmod +x /python-broadlink/cli/broadlink_cli
-RUN chmod +x /python-broadlink/cli/broadlink_discovery
+&& python -m pip install setuptools 
 
 RUN curl -sL https://deb.nodesource.com/setup_8.x | bash - \
 && apt-get install -yqq --no-install-recommends nodejs   && rm -rf /var/lib/apt/lists/*

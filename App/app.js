@@ -14,7 +14,8 @@ const client  = mqtt.connect(process.env.MQTTLOCAL);
 client.on('connect', function () {
   console.log('connected');
   client.subscribe(LED_LIGHTS_TOPIC);
-  client.subscribe('FIRE_ON_TOPIC');
+  client.subscribe(FIRE_ON_TOPIC);
+  client.subscribe(FIRE_OFF_TOPIC);
   client.on("message", async function (topic, message) {
     if (topic===LED_LIGHTS_TOPIC){
       const brightnessPercentage =  parseInt(message);

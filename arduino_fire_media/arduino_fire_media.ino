@@ -46,7 +46,7 @@ void WIFI_Connect()
   client.setCallback(callback); 
   while (!client.connected()) {
     Serial.println("Connecting to MQTT..."); 
-    if (client.connect("ESPDownStairsClient", mqttUser, mqttPassword )) { 
+    if (client.connect("ESPFIREMEDIARELAYClient", mqttUser, mqttPassword )) { 
       Serial.println("connected");   
     } else { 
       Serial.print("failed with state ");

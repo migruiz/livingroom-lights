@@ -78,13 +78,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println();
   Serial.println("-----------------------");
 
-  if (strncmp(topic, "livingroom/fire/state", strlen("bathroom/master/switch/state")) == 0) {  
       if (!strncmp((char *)payload, "on", length)) {
                  digitalWrite(FIRE_PIN, LOW); 
         } else if (!strncmp((char *)payload, "off", length)) {
             digitalWrite(FIRE_PIN, HIGH); 
         }
-    }
 }
  
 void loop() {

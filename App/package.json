@@ -6,6 +6,7 @@
     "name": "piscos"
   },
   "dependencies": {
-    "mqtt": "^4.2.6"
+    "mqtt": "^4.2.6",
+    "rxjs": "6.5.2"
   }
 }

@@ -146,26 +146,29 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 })();
 
 
-
-function execCommandAsync(code) {
-  return new Promise(function (resolve, reject) {
-      const command = spawn('/python-broadlink/cli/broadlink_cli'
-          , [
-              '--type'
-              , '0x2737'
-              , '--host'
-              , RM_IP
-              , '--mac'
-              , RM_MAC
-              , '--send'
-              , code
-          ]);
-      command.stdout.on('data', data => {
-          console.log(data.toString());
-      });
-      command.on('exit', function (code, signal) {
-          console.log('exited');
-          resolve();
-      });
+(function () {
+  const remoteStream = new Observable(async subscriber => {  
+    var mqttCluster=await mqtt.getClusterAsync()   
+    mqttCluster.subscribeData('zigbee2mqtt/0x84ba20fffea45342', function(content){   
+            subscriber.next(content)
+    });
   });
-}
+
+  const onStream = remoteStream.pipe(
+    filter( m => m.action==='on')
+  )
+  const offStream = remoteStream.pipe(
+    filter( m => m.action==='brightness_move_up')
+  )
+
+  onStream.subscribe(async m => {
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state','on');    
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');
+  })
+  offStream.subscribe(async m => {
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state','off');    
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','off');
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','0')
+    (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:0}));
+  })
+})();

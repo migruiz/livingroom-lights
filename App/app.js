@@ -169,6 +169,7 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
     (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state','off');    
     (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','off');
     (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','0')
+    (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set',JSON.stringify({brightness:0}));
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:0}));
   })
 })();

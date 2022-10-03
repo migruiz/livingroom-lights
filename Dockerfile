@@ -16,7 +16,6 @@ RUN cd /python-broadlink \
 && python3 -m pip install setuptools \
 && python3 -m pip install pycparser \
 && python3 -m pip install cffi \
-&& python3 -m pip install cryptography \
 && python3 setup.py install
 
 RUN chmod +x /python-broadlink/cli/broadlink_cli

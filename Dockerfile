@@ -2,7 +2,7 @@ FROM balenalib/raspberrypi3-debian-node:8-latest
 RUN [ "cross-build-start" ]
 
 
-
+RUN ls
 
 RUN apt-get update && \
 apt-get install -yqq --no-install-recommends python3 python3-pip

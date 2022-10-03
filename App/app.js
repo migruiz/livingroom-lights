@@ -146,6 +146,32 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 })();
 
 
+
+(function () {
+  const masterFireSwitchSensor = new Observable(async subscriber => {  
+    var mqttCluster=await mqtt.getClusterAsync()   
+    mqttCluster.subscribeData('zigbee2mqtt/0x84ba20fffecacbc4', function(content){   
+            subscriber.next(content)
+    });
+  });
+
+  const masterFireSwitchStream = masterFireSwitchSensor.pipe(
+    filter( c=> c.action==='on' || c.action==='brightness_stop' || c.action==='brightness_move_up')
+    ,map(m => m.action==='on')
+    ,distinctUntilChanged()
+  )
+  const fireActivationStream = masterFireSwitchStream.pipe(
+    map(m => m?'on':'off')
+  )
+
+  fireActivationStream.subscribe(async m => {  
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state',m);
+  })
+})();
+
+
+
+
 (function () {
   const remoteStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   

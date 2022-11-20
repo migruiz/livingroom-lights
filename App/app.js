@@ -158,7 +158,6 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
   const masterFireSwitchStream = masterFireSwitchSensor.pipe(
     filter( c=> c.action==='on' || c.action==='brightness_stop' || c.action==='brightness_move_up')
     ,map(m => m.action==='on')
-    ,distinctUntilChanged()
   )
   const fireActivationStream = masterFireSwitchStream.pipe(
     map(m => m?'on':'off')

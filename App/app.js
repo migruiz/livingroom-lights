@@ -148,24 +148,62 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 
 
 (function () {
-  const masterFireSwitchSensor = new Observable(async subscriber => {  
+
+  function execCommandAsync(code) {
+    return new Promise(function (resolve, reject) {
+        const command = spawn('/python-broadlink/cli/broadlink_cli'
+            , [
+                '--type'
+                , '0x2737'
+                , '--host'
+                , RM_IP
+                , '--mac'
+                , RM_MAC
+                , '--send'
+                , code
+            ]);
+        command.stdout.on('data', data => {
+            console.log(data.toString());
+        });
+        command.on('exit', function (code, signal) {
+            console.log('exited');
+            resolve();
+        });
+    });
+  }
+
+  const buttonControl = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
-    mqttCluster.subscribeData('zigbee2mqtt/0x84ba20fffecacbc4', function(content){   
+    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){   
             subscriber.next(content)
     });
   });
 
-  const masterFireSwitchStream = masterFireSwitchSensor.pipe(
-    filter( c=> c.action==='on' || c.action==='brightness_stop' || c.action==='brightness_move_up')
-    ,map(m => m.action==='on')
+  buttonControl.pipe(
+    filter( c=>  c.action==='brightness_move_up')
   )
-  const fireActivationStream = masterFireSwitchStream.pipe(
-    map(m => m?'on':'off')
-  )
-
-  fireActivationStream.subscribe(async m => {  
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state',m);
+  .subscribe(async m => {  
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');
+    await execCommandAsync(FIRE_ON_IR_CODE);
   })
+
+
+  buttonControl.pipe(
+    filter( c=>  c.action==='brightness_move_down')
+  )
+  .subscribe(async m => {  
+    await execCommandAsync(FIRE_OFF_IR_CODE);
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','off');
+  })
+
+
+  buttonControl.pipe(
+    filter( c=>  c.action==='arrow_right_click' || c.action==='arrow_left_click')
+  )
+  .subscribe(async m => {  
+    await execCommandAsync(FIRE_FLAME_CHANGE_IR_CODE);
+  })
+
 })();
 
 

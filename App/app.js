@@ -21,8 +21,7 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 (function () {
   const ledControlStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
-    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){
-      console.log(content);    
+    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){ 
             subscriber.next(content)
     });
   });
@@ -30,14 +29,14 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 
   
     const brightnessActionStream = merge(ledControlStream).pipe(
+      filter( m => m.action==='arrow_right_click' ||  m.action==='arrow_left_click' ||  m.action==='arrow_left_hold' ||  m.action==='arrow_right_hold' ),
       scan((acc, curr) => {
-          if (curr.action==='arrow_right_click') return { value: acc.value + 50 > 1000 ? 1000 : acc.value + 50 } 
-          if (curr.action==='arrow_left_click') return {value: acc.value - 50 < 1 ? 1 : acc.value - 50 }
+          if (curr.action==='arrow_right_click') return { value: acc.value + 30 > 1000 ? 1000 : acc.value + 30 } 
+          if (curr.action==='arrow_left_click') return {value: acc.value - 30 < 1 ? 1 : acc.value - 30 }
           if (curr.action==='arrow_left_hold') return {value: 0}
           if (curr.action==='arrow_right_hold') return {value: 10}
           
-      }, {value:0}),
-      share()
+      }, {value:0})
   )
   brightnessActionStream.subscribe(async m => {
     //console.log('Upstairs', m);
@@ -149,7 +148,6 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
             console.log(data.toString());
         });
         command.on('exit', function (code, signal) {
-            console.log('exited');
             resolve();
         });
     });

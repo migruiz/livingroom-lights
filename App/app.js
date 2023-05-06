@@ -21,37 +21,20 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 (function () {
   const ledControlStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
-    mqttCluster.subscribeData('zigbee2mqtt/0x2c1165fffecad895', function(content){
+    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){
       console.log(content);    
             subscriber.next(content)
     });
   });
   
-  const ledControlStreamShared = ledControlStream.pipe(share())
+
   
-  const onOffStream = ledControlStreamShared.pipe(
-    filter( m => m.action==='on' ||  m.action==='off')
-  )
-  const onRotationStream = ledControlStreamShared.pipe(
-    filter( m => m.action==='brightness_move_down' ||  m.action==='brightness_move_up')
-  )
-  const onStopStream = ledControlStreamShared.pipe(
-    filter( m => m.action==='brightness_stop')
-  )
-  const leftRightStream = onRotationStream.pipe(
-    flatMap( m => interval(30).pipe(
-  
-        startWith(1),
-        takeUntil(onStopStream),
-        mapTo(m)
-    )));
-  
-    const brightnessActionStream = merge(leftRightStream,onOffStream).pipe(
+    const brightnessActionStream = merge(ledControlStream).pipe(
       scan((acc, curr) => {
-          if (curr.action==='brightness_move_up') return { value: acc.value + 1 > 1000 ? 1000 : acc.value + 1 } 
-          if (curr.action==='brightness_move_down') return {value: acc.value - 1 < 1 ? 1 : acc.value - 1 }
-          if (curr.action==='off') return {value: 0}
-          if (curr.action==='on') return {value: 10}
+          if (curr.action==='arrow_right_click') return { value: acc.value + 50 > 1000 ? 1000 : acc.value + 50 } 
+          if (curr.action==='arrow_left_click') return {value: acc.value - 50 < 1 ? 1 : acc.value - 50 }
+          if (curr.action==='arrow_left_hold') return {value: 0}
+          if (curr.action==='arrow_right_hold') return {value: 10}
           
       }, {value:0}),
       share()
@@ -198,7 +181,7 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 
 
   buttonControl.pipe(
-    filter( c=>  c.action==='arrow_right_click' || c.action==='arrow_left_click')
+    filter( c=>  c.action==='on')
   )
   .subscribe(async m => {  
     await execCommandAsync(FIRE_FLAME_CHANGE_IR_CODE);

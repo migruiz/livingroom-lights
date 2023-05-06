@@ -165,7 +165,7 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
   )
   .subscribe(async m => {  
     (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');
-    await delay(500);
+    await delay(1000);
     await execCommandAsync(FIRE_ON_IR_CODE);
   })
 

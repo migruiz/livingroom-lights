@@ -297,11 +297,11 @@ const combinedStream = merge(autoOnOffStream,masterButtonStream).pipe(
 .subscribe(async m => {
   console.log(m);
     if (m.actionState){
-
+      await execCommandAsync(FIRE_ON_IR_CODE);
       (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','20');
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:20, color_temp:'warm', state:'ON'}));
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set',JSON.stringify({brightness:20, color_temp:'warm', state:'ON'}));
-      (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');    
       await delay(1000);
       await execCommandAsync(FIRE_ON_IR_CODE);
       await delay(1000);

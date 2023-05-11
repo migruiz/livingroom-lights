@@ -18,6 +18,28 @@ const FIRE_ON_IR_CODE = '2600880100012a591242121a131a1319121b121a1440123e1719131
 const FIRE_OFF_IR_CODE = '2600880100012a591143111b1319121b1319121b13411319111c111b111b121b111b121b111b111c111b111b1419111b1242111c1142111c131913411143111b11431142121b111b1419111b12421242111b121b111b111b121b111b12421143111b111c111b121a121b111b12421143111b131a111b111c121a121a12421143121a121b121a121b121a121b11421341111c111b121a121b111b121b11421341111c111b111c111b121a131a12421142121b121a111c121a111c111b12421241131a121a121b121a131a121a11431242121a121b121a121a131a111b12421143121a121b111b121b111b121b12411341111c121a111b121b121a131a12411341121b121a121b121a121a121b12421142131a111b131a121a121b111b12421241131a121a131a121a12421242121a111b121b121a121b121a121b121a111c111b121a121b111b121b111b121b111b111c121a121a131a121a131a111b111c111b111b131a111b121b121a131a111b111c121a121a131a111b121b1142131a111b124211431241131a12000d05'
 const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1242121a131a121a131a121a131a121a121b12411419121a131a1242121a1242121a131a121a121b121a121b1241121b121a131a121a12421242121a121b121a121b121a121a13411440121a131a121a131a121a131a12411341121b121a121b121a111c121a12421241131a121a131a121a131a121a13411242121a121b121a121b111b121a13411242121a121b121a121b121a121b12411242121b121a111b131a121a131a12421241131a121a121b121a121b121a11431241131a121a131a121a121b111b12421242121a121a131a121a131a111b12421242121a131a121a121b121a111b13411242121a131a121b121a111b121b12411341121b111b121b121a121a131a12421241131a121a131a121a12421242121a12421242121a121b1241131a121a121b121a121b121a1419121a111c1319121a131a1319121b121a121b121a121b121a121a131a121a1419121a121b121a1419121a121b121a111b1419114313191143121a1440121b1241131a130006e70c000d05000000000000000000000000';
 
+function execCommandAsync(code) {
+  return new Promise(function (resolve, reject) {
+      const command = spawn('/python-broadlink/cli/broadlink_cli'
+          , [
+              '--type'
+              , '0x2737'
+              , '--host'
+              , RM_IP
+              , '--mac'
+              , RM_MAC
+              , '--send'
+              , code
+          ]);
+      command.stdout.on('data', data => {
+          console.log(data.toString());
+      });
+      command.on('exit', function (code, signal) {
+          resolve();
+      });
+  });
+}
+
 (function () {
   const ledControlStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
@@ -131,27 +153,7 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
 
 (function () {
 
-  function execCommandAsync(code) {
-    return new Promise(function (resolve, reject) {
-        const command = spawn('/python-broadlink/cli/broadlink_cli'
-            , [
-                '--type'
-                , '0x2737'
-                , '--host'
-                , RM_IP
-                , '--mac'
-                , RM_MAC
-                , '--send'
-                , code
-            ]);
-        command.stdout.on('data', data => {
-            console.log(data.toString());
-        });
-        command.on('exit', function (code, signal) {
-            resolve();
-        });
-    });
-  }
+
 
   const buttonControl = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   

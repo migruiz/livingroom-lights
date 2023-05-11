@@ -222,3 +222,99 @@ const FIRE_FLAME_CHANGE_IR_CODE = '26008c0100012b581341121b121a121a131a1242121a1
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:0}));
   })
 })();
+
+
+
+
+
+
+
+(function () {
+  const sensorStream = new Observable(async subscriber => {  
+    var mqttCluster=await mqtt.getClusterAsync()   
+    mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function(content){   
+      if (content.occupancy){      
+        subscriber.next(content)
+    }
+    });
+  });
+
+
+
+  const sharedSensorStream = sensorStream.pipe(
+    share()
+    )
+const turnOffStream = sharedSensorStream.pipe(
+    debounceTime(2 * 60 * 1000),
+    mapTo("off"),
+    share()
+    )
+
+const turnOnStream = sharedSensorStream.pipe(
+    throttle(_ => turnOffStream),
+    mapTo("on")
+)
+const autoOnOffStream = merge(turnOnStream,turnOffStream).pipe(
+  map(e=> ({type:'auto', actionState:e==='on'}))
+)
+
+
+const buttonControl = new Observable(async subscriber => {  
+  var mqttCluster=await mqtt.getClusterAsync()   
+  mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){   
+          subscriber.next(content)
+  });
+});
+
+
+const masterButtonStream = buttonControl.pipe(
+  filter( c=>  c.action==='off'),
+  mapTo({type:'master'})
+)
+
+const combinedStream = merge(autoOnOffStream,masterButtonStream).pipe(
+  scan((acc, curr) => {
+      if (curr.type==='master') return {type:curr.type, masterState:!acc.masterState, actionState:!acc.masterState}
+      if (curr.type==='auto') {
+        if (acc.masterState){
+          return {type:curr.type, masterState:acc.masterState, actionState:curr.actionState}
+        }
+        else{
+          return {type:'omit', masterState:acc.masterState}
+        }
+      }
+      
+  }, {masterState:false, actionState:false, type: 'master'}),
+  filter(e => e.type!=='omit')
+  
+  );
+
+
+
+  combinedStream
+.subscribe(async m => {
+  console.log(m);
+    if (m.actionState){
+
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','20');
+      (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:20, color_temp:'warm', state:'ON'}));
+      (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set',JSON.stringify({brightness:20, color_temp:'warm', state:'ON'}));
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state','on');
+      await delay(1000);
+      await execCommandAsync(FIRE_ON_IR_CODE);
+      await delay(1000);
+      await execCommandAsync(FIRE_ON_IR_CODE);
+      await delay(1000);
+      await execCommandAsync(FIRE_ON_IR_CODE);
+    }
+    else{
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','0');
+      (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set',JSON.stringify({brightness:10, color_temp:'warm', state:'OFF'}));
+      (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set',JSON.stringify({brightness:10, color_temp:'warm', state:'OFF'}));
+      await execCommandAsync(FIRE_OFF_IR_CODE);
+    }
+})
+
+
+
+})();

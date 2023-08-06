@@ -3,6 +3,8 @@ const { mergeMap, withLatestFrom, map,share,shareReplay, filter,mapTo,take,debou
 var mqtt = require('./mqttCluster.js');
 global.mtqqLocalPath = 'mqtt://192.168.0.11';
 var spawn = require('child_process').spawn;
+const CronJob = require('cron').CronJob;
+const {DateTime} = require('luxon');
 
 const LED_LIGHTS_TOPIC = 'livingroom/wall/light/httpbrightnessvalue';
 const FIRE_ON_TOPIC = 'livingroom/wall/fireplace/httpon';
@@ -150,7 +152,7 @@ function execCommandAsync(code) {
 })();
 
 
-
+//fireplace control
 (function () {
 
 
@@ -196,7 +198,7 @@ function execCommandAsync(code) {
 
 
 
-
+//master switch
 (function () {
   const remoteStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
@@ -230,8 +232,82 @@ function execCommandAsync(code) {
 
 
 
-
+//auto function
 (function () {
+
+  const sunRiseSetHourByMonth = {
+    1:{
+        sunRise: 9,
+        sunSet: 16
+    },
+    2:{
+        sunRise: 9,
+        sunSet: 17
+    },
+    3:{
+        sunRise: 8,
+        sunSet: 18
+    },
+    4:{
+        sunRise: 7,
+        sunSet: 19
+    },
+    5:{
+        sunRise: 6,
+        sunSet: 20
+    },
+    6:{
+        sunRise: 6,
+        sunSet: 21
+    },
+    7:{
+        sunRise: 6,
+        sunSet: 21
+    },
+    8:{
+        sunRise: 6,
+        sunSet: 20
+    },
+    9:{
+        sunRise: 6,
+        sunSet: 19
+    },
+    10:{
+        sunRise: 7,
+        sunSet: 18
+    },
+    11:{
+        sunRise: 8,
+        sunSet: 17
+    },
+    12:{
+        sunRise: 9,
+        sunSet: 16
+    },
+}
+  const everyHourStream =  new Observable(subscriber => {      
+    new CronJob(
+        `0 * * * *`,
+       function() {
+        subscriber.next(true);
+       },
+       null,
+       true,
+       'Europe/Dublin'
+   );
+  });
+  const sharedHourStream = everyHourStream.pipe(share())
+  const sunRiseStream = sharedHourStream.pipe(
+    mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunRise),
+    filter(sunRiseHour => DateTime.now().hour === sunRiseHour),
+    map(sunRiseHour => ({type:'sunRise',hour:sunRiseHour}))
+    )
+    const sunSetStream = sharedHourStream.pipe(
+      mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunSet),
+      filter(sunSetHour => DateTime.now().hour === sunSetHour),
+      map(sunSetHour => ({type:'sunSet',hour:sunSetHour}))
+      )
+
   const sensorStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
     mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function(content){   
@@ -247,7 +323,7 @@ function execCommandAsync(code) {
     share()
     )
 const turnOffStream = sharedSensorStream.pipe(
-    debounceTime(2 * 60 * 1000),
+    debounceTime(3 * 60 * 1000),
     mapTo("off"),
     share()
     )
@@ -274,20 +350,14 @@ const masterButtonStream = buttonControl.pipe(
   mapTo({type:'master'})
 )
 
-const combinedStream = merge(autoOnOffStream,masterButtonStream).pipe(
+const combinedStream = merge(autoOnOffStream,masterButtonStream,sunRiseStream,sunSetStream).pipe(
   scan((acc, curr) => {
       if (curr.type==='master') return {type:curr.type, masterState:!acc.masterState, actionState:!acc.masterState}
-      if (curr.type==='auto') {
-        if (acc.masterState){
-          return {type:curr.type, masterState:acc.masterState, actionState:curr.actionState}
-        }
-        else{
-          return {type:'omit', masterState:acc.masterState}
-        }
-      }
+      if (curr.type==='sunRise') return {type:curr.type, masterState:false, actionState:acc.actionState}
+      if (curr.type==='sunSet') return {type:curr.type, masterState:true, actionState:acc.actionState}
+      if (curr.type==='auto') return {type:curr.type, masterState:true, actionState:acc.masterState && curr.actionState}
       
-  }, {masterState:false, actionState:false, type: 'master'}),
-  filter(e => e.type!=='omit')
+  }, {masterState:false, actionState:false, type: 'init'}),
   
   );
 

@@ -355,9 +355,17 @@ const combinedStream = merge(autoOnOffStream,masterButtonStream,sunRiseStream,su
       if (curr.type==='master') return {type:curr.type, masterState:!acc.masterState, actionState:!acc.masterState}
       if (curr.type==='sunRise') return {type:curr.type, masterState:false, actionState:acc.actionState}
       if (curr.type==='sunSet') return {type:curr.type, masterState:true, actionState:acc.actionState}
-      if (curr.type==='auto') return {type:curr.type, masterState:true, actionState:acc.masterState && curr.actionState}
+      if (curr.type==='auto') {
+        if (acc.masterState){
+          return {type:curr.type, masterState:acc.masterState, actionState:curr.actionState}
+        }
+        else{
+          return {type:'omit', masterState:acc.masterState}
+        }
+      }
       
   }, {masterState:false, actionState:false, type: 'init'}),
+  filter(e => e.type!=='omit')
   
   );
 

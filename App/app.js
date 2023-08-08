@@ -271,7 +271,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     },
     8:{
         sunRise: 6,
-        sunSet: 21
+        sunSet: 20
     },
     9:{
         sunRise: 6,

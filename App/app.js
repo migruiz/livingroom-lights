@@ -45,7 +45,7 @@ function execCommandAsync(code) {
   });
 }
 
-console.log(`Living Room lights current time ${DateTime.now()}`)
+console.log(`Living Room lights current time ${DateTime.now()}`);
 
 (function () {
   const ledControlStream = new Observable(async subscriber => {  

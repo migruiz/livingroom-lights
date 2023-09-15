@@ -47,34 +47,163 @@ function execCommandAsync(code) {
 
 console.log(`Living Room lights current time ${DateTime.now()}`);
 
+
+//wall lights
 (function () {
-  const ledControlStream = new Observable(async subscriber => {  
+
+
+
+
+  const sunRiseSetHourByMonth = {
+    1:{
+        sunRise: 9,
+        sunSet: 16
+    },
+    2:{
+        sunRise: 9,
+        sunSet: 17
+    },
+    3:{
+        sunRise: 8,
+        sunSet: 18
+    },
+    4:{
+        sunRise: 7,
+        sunSet: 19
+    },
+    5:{
+        sunRise: 6,
+        sunSet: 20
+    },
+    6:{
+        sunRise: 6,
+        sunSet: 21
+    },
+    7:{
+        sunRise: 6,
+        sunSet: 21
+    },
+    8:{
+        sunRise: 6,
+        sunSet: 20
+    },
+    9:{
+        sunRise: 6,
+        sunSet: 19
+    },
+    10:{
+        sunRise: 7,
+        sunSet: 18
+    },
+    11:{
+        sunRise: 8,
+        sunSet: 17
+    },
+    12:{
+        sunRise: 9,
+        sunSet: 16
+    },
+}
+  const everyHourStream =  new Observable(subscriber => {      
+    new CronJob(
+        `0 * * * *`,
+       function() {
+        subscriber.next(true);
+       },
+       null,
+       true,
+       'Europe/Dublin'
+   );
+  });
+  const sharedHourStream = everyHourStream.pipe(share())
+  const sunRiseStream = sharedHourStream.pipe(
+    mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunRise),
+    filter(sunRiseHour => DateTime.now().hour === sunRiseHour),
+    map(sunRiseHour => ({type:'sunRise',hour:sunRiseHour}))
+    )
+    const sunSetStream = sharedHourStream.pipe(
+      mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunSet),
+      filter(sunSetHour => DateTime.now().hour === sunSetHour),
+      map(sunSetHour => ({type:'sunSet',hour:sunSetHour}))
+      )
+
+  const sensorStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
-    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function(content){ 
-            subscriber.next(content)
+    mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function(content){   
+      if (content.occupancy){      
+        subscriber.next(content)
+    }
     });
   });
-  
 
-  
-    const brightnessActionStream = merge(ledControlStream).pipe(
-      filter( m => m.action==='arrow_right_click' ||  m.action==='arrow_left_click' ||  m.action==='arrow_left_hold' ||  m.action==='arrow_right_hold' ),
-      scan((acc, curr) => {
-          if (curr.action==='arrow_right_click') return { value: acc.value + 25 > 1000 ? 1000 : acc.value + 25 } 
-          if (curr.action==='arrow_left_click') return {value: acc.value - 25 < 1 ? 1 : acc.value - 25 }
-          if (curr.action==='arrow_left_hold') return {value: 0}
-          if (curr.action==='arrow_right_hold') return {value: 10}
-          
-      }, {value:0})
-  )
-  brightnessActionStream.subscribe(async m => {
-    //console.log('Upstairs', m);
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light',`${m.value}`)
+
+
+  const sharedSensorStream = sensorStream.pipe(
+    share()
+    )
+const turnOffStream = sharedSensorStream.pipe(
+    debounceTime(4 * 60 * 1000),
+    mapTo("off"),
+    share()
+    )
+
+const turnOnStream = sharedSensorStream.pipe(
+    throttle(_ => turnOffStream),
+    mapTo("on")
+)
+const autoOnOffStream = merge(turnOnStream,turnOffStream).pipe(
+  map(e=> ({type:'auto', actionState:e==='on'}))
+)
+
+
+const buttonControl = new Observable(async subscriber => {  
+  var mqttCluster=await mqtt.getClusterAsync()   
+  mqttCluster.subscribeData('zigbee2mqtt/0x385cfbfffe05a8d8', function(content){   
+          subscriber.next(content)
+  });
+});
+
+
+const masterButtonStream = buttonControl.pipe(
+  filter( c=>  c.action==='brightness_step_up' || c.action==='brightness_step_down' || c.action==='toggle'),
+  map(c => {
+    const {action} = c;
+    if (action==='toggle') return { type:"toggle"} 
+    else if (action==='brightness_step_down') return { type:"masterDown", value:c.action_step_size}  
+    else if (action==='brightness_step_up')return { type:"masterUp", value:c.action_step_size}   
   })
+)
+
+const combinedStream = merge(autoOnOffStream,masterButtonStream,sunRiseStream,sunSetStream).pipe(
+  scan((acc, curr) => {
+      if (curr.type==='toggle')  return {type:curr.type, masterState:!acc.masterState, actionState:!acc.masterState, brightness:100}
+      if (curr.type==='masterDown')  return {type:curr.type, masterState:true, actionState:true, brightness: acc.brightness - curr.value < 2 ? 2 : acc.brightness - curr.value }
+      if (curr.type==='masterUp')  return {type:curr.type, masterState:true, actionState:true, brightness: acc.brightness + curr.value > 1000 ? 1000 : acc.brightness + curr.value}
+      if (curr.type==='sunRise') return {type:curr.type, masterState:false, actionState:false, brightness:acc.brightness}
+      if (curr.type==='sunSet')  return {type:curr.type, masterState:true, actionState:acc.actionState, brightness:acc.brightness}
+      if (curr.type==='auto')    return {type:acc.masterState ? curr.type : 'omit', masterState:acc.masterState, actionState:curr.actionState, brightness:acc.brightness}
+      
+  }, {masterState:false, actionState:false, type: 'init', brightness:0}),
+  filter(e => e.type!=='omit')
+  
+  );
+
+
+  combinedStream
+.subscribe(async m => {
+    if (m.actionState){
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light',m.brightness.toString());
+    }
+    else{
+      (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light','0');
+    }
+})
+
+
 })();
 
 
-
+//lamps
 (function () {
   const ledControlStream = new Observable(async subscriber => {  
     var mqttCluster=await mqtt.getClusterAsync()   
@@ -239,7 +368,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
 //auto function
 (function () {
-
+return;
   const sunRiseSetHourByMonth = {
     1:{
         sunRise: 9,

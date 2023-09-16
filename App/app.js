@@ -175,8 +175,8 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     map(c => {
       const { action } = c;
       if (action === 'toggle') return { type: "toggle" }
-      else if (action === 'brightness_step_down') return { type: "lightsDown", value: c.action_step_size }
-      else if (action === 'brightness_step_up') return { type: "lightsUp", value: c.action_step_size }
+      else if (action === 'brightness_step_down') return { type: "lightsDown", value: c.action_step_size * 2 }
+      else if (action === 'brightness_step_up') return { type: "lightsUp", value: c.action_step_size * 2 }
       else if (action === 'color_temperature_step_up') return { type: "changeFirePlaceColor" }
       else if (action === 'color_temperature_step_down') return { type: "changeFirePlaceColor" }
     })
@@ -211,7 +211,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     }),
     map(({changeFirePlaceColorReqNumber}) => changeFirePlaceColorReqNumber),
     filter(e => e !== 0),
-    throttleTime(400)
+    throttleTime(1200)
   )
   const fireOnStream = combinedStream.pipe(
     distinctUntilChanged((prev,curr) => {
@@ -221,8 +221,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
   )
 
   fireOnStream
-  .subscribe(async m => {
-    console.log(JSON.stringify(m));    
+  .subscribe(async m => {  
     if (m) {
       await execCommandAsync(FIRE_ON_IR_CODE);
     }
@@ -233,13 +232,11 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
   fireColorStream
     .subscribe(async m => {
-      console.log(JSON.stringify(m));
       await execCommandAsync(FIRE_FLAME_CHANGE_IR_CODE);
     })
 
   lightsStream
     .subscribe(async m => {
-      console.log(JSON.stringify(m));
       if (m.lightsOn) {
         (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', m.brightness.toString());
       }

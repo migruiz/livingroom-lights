@@ -184,24 +184,62 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
   const combinedStream = merge(autoOnOffStream, masterButtonStream, sunRiseStream, sunSetStream).pipe(
     scan((acc, curr) => {
-      if (curr.type === 'toggle') return { type: curr.type, masterState: !acc.masterState, lightsOn: !acc.masterState, brightness: 100, fireOn: !acc.masterState, changeFirePlaceColor: false }
-      if (curr.type === 'lightsDown') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness - curr.value < 2 ? 2 : acc.brightness - curr.value, fireOn: true, changeFirePlaceColor: false }
-      if (curr.type === 'lightsUp') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness + curr.value > 1000 ? 1000 : acc.brightness + curr.value, fireOn: true, changeFirePlaceColor: false }
-      if (curr.type === 'changeFirePlaceColor') return { ...acc, type: curr.type, masterState: true, lightsOn: true, fireOn: true, changeFirePlaceColor: true }
-      if (curr.type === 'sunRise') return { ...acc, type: curr.type, masterState: false, lightsOn: false, fireOn: false, changeFirePlaceColor: false }
-      if (curr.type === 'sunSet') return { ...acc, type: curr.type, masterState: true, changeFirePlaceColor: false  }
-      if (curr.type === 'auto') return { ...acc, type: acc.masterState ? curr.type : 'omit', lightsOn: curr.occupancy, fireOn: curr.occupancy, changeFirePlaceColor: false  }
+      if (curr.type === 'toggle') return {...acc, type: curr.type, masterState: !acc.masterState, lightsOn: !acc.masterState, brightness: 100, fireOn: !acc.masterState }
+      if (curr.type === 'lightsDown') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness - curr.value < 2 ? 2 : acc.brightness - curr.value, fireOn: true }
+      if (curr.type === 'lightsUp') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness + curr.value > 1000 ? 1000 : acc.brightness + curr.value, fireOn: true}
+      if (curr.type === 'changeFirePlaceColor') return { ...acc, type: curr.type, masterState: true, lightsOn: true, fireOn: true, changeFirePlaceColorReqNumber: acc.changeFirePlaceColorReqNumber + 1 }
+      if (curr.type === 'sunRise') return { ...acc, type: curr.type, masterState: false, lightsOn: false, fireOn: false }
+      if (curr.type === 'sunSet') return { ...acc, type: curr.type, masterState: true }
+      if (curr.type === 'auto') return { ...acc, type: acc.masterState ? curr.type : 'omit', lightsOn: curr.occupancy, fireOn: curr.occupancy }
 
-    }, { type: 'init', masterState: false, lightsOn: false, brightness: 0, fireOn: false, changeFirePlaceColor: false }),
-    filter(e => e.type !== 'omit')
+    }, { type: 'init', masterState: false, lightsOn: false, brightness: 0, fireOn: false, changeFirePlaceColorReqNumber: 0 }),
+    filter(e => e.type !== 'omit'),
+    share()
 
   );
 
+  const lightsStream = combinedStream.pipe(
+    distinctUntilChanged((prev,curr) => {
+     return prev.lightsOn===curr.lightsOn && prev.brightness===curr.brightness
+    }),
+    map(({lightsOn,brightness }) => ({lightsOn,brightness}))
+  )
 
-  combinedStream
+  const fireColorStream = combinedStream.pipe(
+    distinctUntilChanged((prev,curr) => {
+     return prev.changeFirePlaceColorReqNumber===curr.changeFirePlaceColorReqNumber
+    }),
+    map(({changeFirePlaceColorReqNumber}) => changeFirePlaceColorReqNumber),
+    filter(e => e !== 0),
+    throttleTime(400)
+  )
+  const fireOnStream = combinedStream.pipe(
+    distinctUntilChanged((prev,curr) => {
+     return prev.fireOn===curr.fireOn
+    }),
+    map(({fireOn}) => fireOn)
+  )
+
+  fireOnStream
+  .subscribe(async m => {
+    console.log(JSON.stringify(m));    
+    if (m) {
+      await execCommandAsync(FIRE_ON_IR_CODE);
+    }
+    else {
+      await execCommandAsync(FIRE_OFF_IR_CODE);
+    }
+  })
+
+  fireColorStream
     .subscribe(async m => {
       console.log(JSON.stringify(m));
-      return;
+      await execCommandAsync(FIRE_FLAME_CHANGE_IR_CODE);
+    })
+
+  lightsStream
+    .subscribe(async m => {
+      console.log(JSON.stringify(m));
       if (m.lightsOn) {
         (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', m.brightness.toString());
       }

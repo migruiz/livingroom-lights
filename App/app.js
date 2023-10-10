@@ -53,7 +53,6 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
 
 
-
   const sunRiseSetHourByMonth = {
     1: {
       sunRise: 9,
@@ -251,70 +250,40 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
 //lamps
 (function () {
-  const ledControlStream = new Observable(async subscriber => {
+
+
+
+  const buttonControl = new Observable(async subscriber => {
     var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x0c4314fffe935690', function (content) {
-      //console.log(content);    
+    mqttCluster.subscribeData('zigbee2mqtt/0x187a3efffefaa676', function (content) {
       subscriber.next(content)
     });
   });
 
-  const ledControlStreamShared = ledControlStream.pipe(share())
 
-  const onOffStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'toggle')
-  )
-  const onRotationStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'brightness_up_hold' || m.action === 'brightness_down_hold')
-  )
-  const onStopStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'brightness_up_release' || m.action === 'brightness_down_release')
-  )
-  const leftRightStream = onRotationStream.pipe(
-    flatMap(m => interval(30).pipe(
-
-      startWith(1),
-      takeUntil(onStopStream),
-      mapTo(m)
-    )));
-
-
-  const colorRotationStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'arrow_right_hold' || m.action === 'arrow_left_hold')
-  )
-  const colorStopStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'arrow_right_release' || m.action === 'arrow_left_release')
+  const masterButtonStream = buttonControl.pipe(
+    filter(c =>
+      c.action === 'brightness_step_up' ||
+      c.action === 'brightness_step_down' ||
+      c.action === 'toggle' ||
+      c.action === 'color_temperature_step_up' ||
+      c.action === 'color_temperature_step_down'
+    )
   )
 
-  const singleStateStream = ledControlStreamShared.pipe(
-    filter(m => m.action === 'arrow_left_click' || m.action === 'arrow_right_click' || m.action === 'brightness_down_click' || m.action === 'brightness_up_click')
-  )
-
-  const colorLeftRightStream = colorRotationStream.pipe(
-    flatMap(m => interval(200).pipe(
-
-      startWith(1),
-      takeUntil(colorStopStream),
-      mapTo(m)
-    )));
-
-  const brightnessActionStream = merge(leftRightStream, onOffStream, colorLeftRightStream, singleStateStream).pipe(
+  const brightnessActionStream = masterButtonStream.pipe(
     scan((acc, curr) => {
-      if (curr.action === 'brightness_up_hold') return { brigthnessValue: acc.brigthnessValue + 2 > 254 ? 254 : acc.brigthnessValue + 2, colorTemp: acc.colorTemp, action: 'brigthness' }
-      if (curr.action === 'brightness_up_click') return { brigthnessValue: acc.brigthnessValue + 25 > 254 ? 254 : acc.brigthnessValue + 25, colorTemp: acc.colorTemp, action: 'brigthness' }
-      if (curr.action === 'brightness_down_hold') return { brigthnessValue: acc.brigthnessValue - 2 < 2 ? 2 : acc.brigthnessValue - 2, colorTemp: acc.colorTemp, action: 'brigthness' }
-      if (curr.action === 'brightness_down_click') return { brigthnessValue: acc.brigthnessValue - 25 < 2 ? 2 : acc.brigthnessValue - 25, colorTemp: acc.colorTemp, action: 'brigthness' }
-      if (curr.action === 'arrow_right_hold') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp + 10 > 454 ? 454 : acc.colorTemp + 10, action: 'color' }
-      if (curr.action === 'arrow_right_click') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp + 25 > 454 ? 454 : acc.colorTemp + 25, action: 'color' }
-      if (curr.action === 'arrow_left_hold') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp - 10 < 250 ? 250 : acc.colorTemp - 10, action: 'color' }
-      if (curr.action === 'arrow_left_click') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp - 25 < 250 ? 250 : acc.colorTemp - 25, action: 'color' }
+      if (curr.action === 'brightness_step_up') return { brigthnessValue: acc.brigthnessValue + 30 > 254 ? 254 : acc.brigthnessValue + 30, colorTemp: acc.colorTemp, action: 'brigthness' }
+      if (curr.action === 'brightness_step_down') return { brigthnessValue: acc.brigthnessValue - 30 < 1 ? 1 : acc.brigthnessValue - 30, colorTemp: acc.colorTemp, action: 'brigthness' }
+      if (curr.action === 'color_temperature_step_up') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp + 30 > 454 ? 454 : acc.colorTemp + 30, action: 'color' }
+      if (curr.action === 'color_temperature_step_down') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp - 30 < 250 ? 250 : acc.colorTemp - 30, action: 'color' }
       if (curr.action === 'toggle') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp, action: 'toggle' }
 
-    }, { brigthnessValue: 0, colorTemp: 0 }),
-    share()
+    }, { brigthnessValue: 0, colorTemp: 0 })
   )
+
+
   brightnessActionStream.subscribe(async m => {
-    //console.log('Upstairs', m);
     if (m.action === 'brigthness') {
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set', JSON.stringify({ brightness: m.brigthnessValue }));
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set', JSON.stringify({ brightness: m.brigthnessValue }));
@@ -409,161 +378,3 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
 
 
-
-
-
-//auto function
-(function () {
-  return;
-  const sunRiseSetHourByMonth = {
-    1: {
-      sunRise: 9,
-      sunSet: 16
-    },
-    2: {
-      sunRise: 9,
-      sunSet: 17
-    },
-    3: {
-      sunRise: 8,
-      sunSet: 18
-    },
-    4: {
-      sunRise: 7,
-      sunSet: 19
-    },
-    5: {
-      sunRise: 6,
-      sunSet: 20
-    },
-    6: {
-      sunRise: 6,
-      sunSet: 21
-    },
-    7: {
-      sunRise: 6,
-      sunSet: 21
-    },
-    8: {
-      sunRise: 6,
-      sunSet: 20
-    },
-    9: {
-      sunRise: 6,
-      sunSet: 19
-    },
-    10: {
-      sunRise: 7,
-      sunSet: 18
-    },
-    11: {
-      sunRise: 8,
-      sunSet: 17
-    },
-    12: {
-      sunRise: 9,
-      sunSet: 16
-    },
-  }
-  const everyHourStream = new Observable(subscriber => {
-    new CronJob(
-      `0 * * * *`,
-      function () {
-        subscriber.next(true);
-      },
-      null,
-      true,
-      'Europe/Dublin'
-    );
-  });
-  const sharedHourStream = everyHourStream.pipe(share())
-  const sunRiseStream = sharedHourStream.pipe(
-    mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunRise),
-    filter(sunRiseHour => DateTime.now().hour === sunRiseHour),
-    map(sunRiseHour => ({ type: 'sunRise', hour: sunRiseHour }))
-  )
-  const sunSetStream = sharedHourStream.pipe(
-    mapTo(sunRiseSetHourByMonth[DateTime.now().month].sunSet),
-    filter(sunSetHour => DateTime.now().hour === sunSetHour),
-    map(sunSetHour => ({ type: 'sunSet', hour: sunSetHour }))
-  )
-
-  const sensorStream = new Observable(async subscriber => {
-    var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function (content) {
-      if (content.occupancy) {
-        subscriber.next(content)
-      }
-    });
-  });
-
-
-
-  const sharedSensorStream = sensorStream.pipe(
-    share()
-  )
-  const turnOffStream = sharedSensorStream.pipe(
-    debounceTime(3 * 60 * 1000),
-    mapTo("off"),
-    share()
-  )
-
-  const turnOnStream = sharedSensorStream.pipe(
-    throttle(_ => turnOffStream),
-    mapTo("on")
-  )
-  const autoOnOffStream = merge(turnOnStream, turnOffStream).pipe(
-    map(e => ({ type: 'auto', actionState: e === 'on' }))
-  )
-
-
-  const buttonControl = new Observable(async subscriber => {
-    var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function (content) {
-      subscriber.next(content)
-    });
-  });
-
-
-  const masterButtonStream = buttonControl.pipe(
-    filter(c => c.action === 'off'),
-    mapTo({ type: 'master' })
-  )
-
-  const combinedStream = merge(autoOnOffStream, masterButtonStream, sunRiseStream, sunSetStream).pipe(
-    scan((acc, curr) => {
-      if (curr.type === 'master') return { type: curr.type, masterState: !acc.masterState, actionState: !acc.masterState }
-      if (curr.type === 'sunRise') return { type: curr.type, masterState: false, actionState: false }
-      if (curr.type === 'sunSet') return { type: curr.type, masterState: true, actionState: acc.actionState }
-      if (curr.type === 'auto') return { type: acc.masterState ? curr.type : 'omit', masterState: acc.masterState, actionState: curr.actionState }
-
-    }, { masterState: false, actionState: false, type: 'init' }),
-    filter(e => e.type !== 'omit')
-
-  );
-
-
-
-  combinedStream
-    .subscribe(async m => {
-      console.log(m);
-      if (m.actionState) {
-        await execCommandAsync(FIRE_ON_IR_CODE);
-        (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', '20');
-        (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
-        await delay(1000);
-        await execCommandAsync(FIRE_ON_IR_CODE);
-        await delay(1000);
-        await execCommandAsync(FIRE_ON_IR_CODE);
-        await delay(1000);
-        await execCommandAsync(FIRE_ON_IR_CODE);
-      }
-      else {
-        (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', '0');
-        await execCommandAsync(FIRE_OFF_IR_CODE);
-      }
-    })
-
-
-
-})();

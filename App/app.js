@@ -157,7 +157,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
   const buttonControl = new Observable(async subscriber => {
     var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x385cfbfffe05a8d8', function (content) {
+    mqttCluster.subscribeData('zigbee2mqtt/0x187a3efffefad05f', function (content) {
       subscriber.next(content)
     });
   });

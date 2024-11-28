@@ -301,49 +301,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 })();
 
 
-//fireplace control
-(function () {
 
-
-
-  const buttonControl = new Observable(async subscriber => {
-    var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x04cd15fffe58b077', function (content) {
-      subscriber.next(content)
-    });
-  });
-
-  buttonControl.pipe(
-    filter(c => c.action === 'brightness_move_up')
-  )
-    .subscribe(async m => {
-      (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
-      await delay(1000);
-      await execCommandAsync(FIRE_ON_IR_CODE);
-      await delay(1000);
-      await execCommandAsync(FIRE_ON_IR_CODE);
-      await delay(1000);
-      await execCommandAsync(FIRE_ON_IR_CODE);
-    })
-
-
-  buttonControl.pipe(
-    filter(c => c.action === 'brightness_move_down')
-  )
-    .subscribe(async m => {
-      await execCommandAsync(FIRE_OFF_IR_CODE);
-      (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'off');
-    })
-
-
-  buttonControl.pipe(
-    filter(c => c.action === 'on')
-  )
-    .subscribe(async m => {
-      await execCommandAsync(FIRE_FLAME_CHANGE_IR_CODE);
-    })
-
-})();
 
 
 

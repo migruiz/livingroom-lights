@@ -13,7 +13,7 @@ RUN cd /python-broadlink \
 && python3 -m pip install setuptools \
 && python3 -m pip install pycparser \
 && python3 -m pip install cffi \
-&& python3 -m pip install cryptography \
+&& python3 -m pip install -Iv cryptography==3.2 \
 && python3 setup.py install \
 && pip3 install broadlink
 

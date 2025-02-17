@@ -126,7 +126,7 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     map(sunSetHour => ({ type: 'sunSet', hour: sunSetHour }))
   )
 
-  const sensorStream = new Observable(async subscriber => {
+  const sensorLivingRoomStream = new Observable(async subscriber => {
     var mqttCluster = await mqtt.getClusterAsync()
     mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function (content) {
       if (content.occupancy) {
@@ -134,8 +134,16 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
       }
     });
   });
+  const sensorEntranceRoomStream = new Observable(async subscriber => {
+    var mqttCluster = await mqtt.getClusterAsync()
+    mqttCluster.subscribeData('zigbee2mqtt/0x00158d000566c0cc', function (content) {
+      if (content.occupancy) {
+        subscriber.next(content)
+      }
+    });
+  });
 
-
+  const sensorStream = merge(sensorLivingRoomStream,sensorEntranceRoomStream)
 
   const sharedSensorStream = sensorStream.pipe(
     share()
@@ -313,18 +321,19 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
       subscriber.next(content)
     });
   });
+  const sharedStream = remoteStream.pipe(share())
 
-  const onMediaStream = remoteStream.pipe(
+  const onMediaStream = sharedStream.pipe(
     filter(m => m.action === 'on')
   )
-  const offMediaStream = remoteStream.pipe(
+  const offMediaStream = sharedStream.pipe(
     filter(m => m.action === 'off')
   )
-  const onFireStream = remoteStream.pipe(
+  const onFireStream = sharedStream.pipe(
     filter(m => m.action === 'brightness_move_up')
   )
 
-  const offFireStream = remoteStream.pipe(
+  const offFireStream = sharedStream.pipe(
     filter(m => m.action === 'brightness_move_down')
   )
 

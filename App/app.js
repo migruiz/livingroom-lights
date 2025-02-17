@@ -309,29 +309,45 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 (function () {
   const remoteStream = new Observable(async subscriber => {
     var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0x84ba20fffea45342', function (content) {
+    mqttCluster.subscribeData('zigbee2mqtt/0xc4d8c8fffe39a866', function (content) {
       subscriber.next(content)
     });
   });
 
-  const onStream = remoteStream.pipe(
+  const onMediaStream = remoteStream.pipe(
     filter(m => m.action === 'on')
   )
-  const offStream = remoteStream.pipe(
+  const offMediaStream = remoteStream.pipe(
+    filter(m => m.action === 'off')
+  )
+  const onFireStream = remoteStream.pipe(
     filter(m => m.action === 'brightness_move_up')
   )
 
-  onStream.subscribe(async m => {
+  const offFireStream = remoteStream.pipe(
+    filter(m => m.action === 'brightness_move_down')
+  )
+
+  onMediaStream.subscribe(async m => {
     (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state', 'on');
     (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
   })
-  offStream.subscribe(async m => {
+  offMediaStream.subscribe(async m => {
     (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state', 'off');
     (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'off');
     (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', '0');
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set', JSON.stringify({ brightness: 0 }));
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set', JSON.stringify({ brightness: 0 }));
   })
+
+  onFireStream.subscribe(async m => {
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
+  })
+  offFireStream.subscribe(async m => {
+    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'off');
+  })
+
+
 })();
 
 

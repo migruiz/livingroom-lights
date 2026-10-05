@@ -1,0 +1,7 @@
+# The program's code on top of the last full build (February 2025), for when only App/*.js has
+# changed. The full Dockerfile no longer builds: its base image looks for Debian buster's
+# package servers, which are gone. This keeps that build's node, python-broadlink and
+# node_modules, so a new npm package still needs the full Dockerfile mended first.
+#   docker buildx build --builder multi -f Dockerfile.code -t migruiz/livingroom-lights --load .
+FROM migruiz/livingroom-lights@sha256:e563e1dc24b3c547841ecbbb92cf707268cb29648eb7151432a3b25dfb419b9f
+COPY App/*.js /App/

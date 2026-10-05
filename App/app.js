@@ -1,7 +1,8 @@
-const { Observable, merge, timer, interval } = require('rxjs');
+const { Observable, Subject, merge, timer, interval } = require('rxjs');
 const { mergeMap, withLatestFrom, map, share, shareReplay, filter, mapTo, take, debounceTime, throttle, throttleTime, startWith, takeWhile, delay, scan, distinct, distinctUntilChanged, tap, flatMap, takeUntil, toArray, groupBy } = require('rxjs/operators');
 var mqtt = require('./mqttCluster.js');
-global.mtqqLocalPath = 'mqtt://192.168.0.11';
+var http = require('http');
+global.mtqqLocalPath = process.env.MQTTLOCAL || 'mqtt://192.168.0.11';
 var spawn = require('child_process').spawn;
 const CronJob = require('cron').CronJob;
 const { DateTime } = require('luxon');
@@ -42,10 +43,50 @@ function execCommandAsync(code) {
     command.on('exit', function (code, signal) {
       resolve();
     });
+    // No broadlink_cli (running off the Pi, for a test): say so rather than crash.
+    command.on('error', function (error) {
+      console.log(error.message);
+      resolve();
+    });
   });
 }
 
 console.log(`Living Room lights current time ${DateTime.now()}`);
+
+// The kitchen iPad's lights screen: GET/POST /living-room, passed through by nginx on the Pi
+// (the screens container in C:/repos/home-assistant).
+const SCREEN_PORT = 8769
+const LAMPS = ['zigbee2mqtt/0x2c1165fffed897d3', 'zigbee2mqtt/0x2c1165fffed8947e'];
+// Seconds the fireplace takes to wake up once its socket is switched on, before it hears the
+// remote's codes.
+const FIRE_WAKE_UP = 3 * 1000;
+
+// What the screen sends in: changes to the wall lights and the fire (into their streams below),
+// and to the lamps.
+const wallScreen = new Subject();
+const lampsScreen = new Subject();
+// The master switch's presses that change the wall lights or the fire behind their streams' backs.
+const masterSwitchEvents = new Subject();
+
+// What the screen is shown. `living` is the wall lights and fire as their stream last left them.
+let living = null;
+const lamps = {};       // each lamp as it last reported, by topic
+let lampsWanted = null; // what the screen last asked the lamps for, until they report it
+// The relays on the media unit (TV) and the fireplace's socket: null until something here
+// switches them, as they don't report.
+const relays = { tv: null, fire: null, fireOnAt: 0 };
+
+async function setRelay(name, on) {
+  const cluster = await mqtt.getClusterAsync();
+  if (name === 'fire') {
+    if (on && relays.fire !== true) relays.fireOnAt = Date.now();
+    relays.fire = on;
+    cluster.publishMessage('livingroom/fire/state', on ? 'on' : 'off');
+  } else {
+    relays.tv = on;
+    cluster.publishMessage('livingroom/media/state', on ? 'on' : 'off');
+  }
+}
 
 
 //wall lights
@@ -189,21 +230,44 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     })
   )
 
-  const combinedStream = merge(autoOnOffStream, masterButtonStream, sunRiseStream, sunSetStream).pipe(
-    scan((acc, curr) => {
-      if (curr.type === 'toggle') return {...acc, type: curr.type, masterState: !acc.masterState, lightsOn: !acc.masterState, brightness: 100, fireOn: !acc.masterState }
-      if (curr.type === 'lightsDown') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness - curr.value < 2 ? 2 : acc.brightness - curr.value, fireOn: true }
-      if (curr.type === 'lightsUp') return { ...acc, type: curr.type, masterState: true, lightsOn: true, brightness: acc.brightness + curr.value > 1000 ? 1000 : acc.brightness + curr.value, fireOn: true}
-      if (curr.type === 'changeFirePlaceColor') return { ...acc, type: curr.type, masterState: true, lightsOn: true, fireOn: true, changeFirePlaceColorReqNumber: acc.changeFirePlaceColorReqNumber + 1 }
-      if (curr.type === 'sunRise') return { ...acc, type: curr.type, masterState: false, lightsOn: false, fireOn: false }
-      if (curr.type === 'sunSet') return { ...acc, type: curr.type, masterState: true }
-      if (curr.type === 'auto') return { ...acc, type: acc.masterState ? curr.type : 'omit', lightsOn: curr.occupancy, fireOn: curr.occupancy }
+  // Screen changes: {type: 'screenWall', brightness} (0 is off), {type: 'screenFire', on},
+  // {type: 'screenFlame'}. Master switch: {type: 'fireSocket', on}, {type: 'allOff'}.
+  const screenStream = merge(wallScreen, masterSwitchEvents)
 
-    }, { type: 'init', masterState: false, lightsOn: false, brightness: 0, fireOn: false, changeFirePlaceColorReqNumber: 0 }),
+  // Whether motion is in charge is kept apart for the wall lights and the fire (lightsArmed,
+  // fireArmed), so the screen can switch one without the other. The button, sunrise and sunset
+  // always set both, as they did when there was one switch for the two.
+  const combinedStream = merge(autoOnOffStream, masterButtonStream, sunRiseStream, sunSetStream, screenStream).pipe(
+    scan((acc, curr) => {
+      if (curr.type === 'toggle') return {...acc, type: curr.type, lightsArmed: !acc.lightsArmed, fireArmed: !acc.lightsArmed, lightsOn: !acc.lightsArmed, brightness: 100, fireOn: !acc.lightsArmed }
+      if (curr.type === 'lightsDown') return { ...acc, type: curr.type, lightsArmed: true, fireArmed: true, lightsOn: true, brightness: acc.brightness - curr.value < 2 ? 2 : acc.brightness - curr.value, fireOn: true }
+      if (curr.type === 'lightsUp') return { ...acc, type: curr.type, lightsArmed: true, fireArmed: true, lightsOn: true, brightness: acc.brightness + curr.value > 1000 ? 1000 : acc.brightness + curr.value, fireOn: true}
+      if (curr.type === 'changeFirePlaceColor') return { ...acc, type: curr.type, lightsArmed: true, fireArmed: true, lightsOn: true, fireOn: true, changeFirePlaceColorReqNumber: acc.changeFirePlaceColorReqNumber + 1 }
+      if (curr.type === 'sunRise') return { ...acc, type: curr.type, lightsArmed: false, fireArmed: false, lightsOn: false, fireOn: false }
+      // Lights what motion has asked for while it wasn't in charge, as it always did.
+      if (curr.type === 'sunSet') return { ...acc, type: curr.type, lightsArmed: true, fireArmed: true, lightsOn: acc.lightsArmed ? acc.lightsOn : acc.occupied, fireOn: acc.fireArmed ? acc.fireOn : acc.occupied }
+      if (curr.type === 'auto') return { ...acc, type: acc.lightsArmed || acc.fireArmed ? curr.type : 'omit', occupied: curr.occupancy, lightsOn: acc.lightsArmed ? curr.occupancy : acc.lightsOn, fireOn: acc.fireArmed ? curr.occupancy : acc.fireOn }
+      // The screen's wall lights slider, like the kitchen's: a level turns them on and gives
+      // motion back the lights; 0 turns them off and leaves them off until the slider goes up,
+      // the button is pressed or the sun sets.
+      if (curr.type === 'screenWall') return curr.brightness > 0
+        ? { ...acc, type: curr.type, lightsArmed: true, lightsOn: true, brightness: curr.brightness }
+        : { ...acc, type: curr.type, lightsArmed: false, lightsOn: false }
+      // The screen's fire switch: on or off, and it stays so whatever motion does.
+      if (curr.type === 'screenFire') return { ...acc, type: curr.type, fireArmed: false, fireOn: curr.on }
+      if (curr.type === 'screenFlame') return { ...acc, type: curr.type, fireArmed: false, fireOn: true, changeFirePlaceColorReqNumber: acc.changeFirePlaceColorReqNumber + 1 }
+      // The master switch cut or restored the fire's socket (the fire lights by itself when
+      // its socket comes on), or turned everything off: only noted, the switch did it.
+      if (curr.type === 'fireSocket') return { ...acc, type: curr.type, fireOn: curr.on }
+      if (curr.type === 'allOff') return { ...acc, type: curr.type, lightsOn: false, fireOn: false }
+
+    }, { type: 'init', lightsArmed: false, fireArmed: false, occupied: false, lightsOn: false, brightness: 100, fireOn: false, changeFirePlaceColorReqNumber: 0 }),
     filter(e => e.type !== 'omit'),
     share()
 
   );
+
+  combinedStream.subscribe(m => { living = m });
 
   const lightsStream = combinedStream.pipe(
     distinctUntilChanged((prev,curr) => {
@@ -224,12 +288,21 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     distinctUntilChanged((prev,curr) => {
      return prev.fireOn===curr.fireOn
     }),
+    // The master switch already did it, with the fire's socket.
+    filter(({type}) => type !== 'fireSocket' && type !== 'allOff'),
     map(({fireOn}) => fireOn)
   )
 
   fireOnStream
-  .subscribe(async m => {  
+  .subscribe(async m => {
     if (m) {
+      // Its socket has only just come on: give it time to wake up, then light it unless
+      // something has put it out meanwhile.
+      const waking = FIRE_WAKE_UP - (Date.now() - relays.fireOnAt);
+      if (waking > 0) {
+        await new Promise(resolve => setTimeout(resolve, waking));
+        if (!living.fireOn) return;
+      }
       await execCommandAsync(FIRE_ON_IR_CODE);
     }
     else {
@@ -279,8 +352,11 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     )
   )
 
-  const brightnessActionStream = masterButtonStream.pipe(
+  // The screen's lamps controls, {action: 'set', brightness} (0 is off) or {action: 'set',
+  // colorTemp}: in the same stream as the switch, so its next press carries on from them.
+  const brightnessActionStream = merge(masterButtonStream, lampsScreen).pipe(
     scan((acc, curr) => {
+      if (curr.action === 'set') return { brigthnessValue: curr.brightness || acc.brigthnessValue, colorTemp: curr.colorTemp || acc.colorTemp, action: 'set', set: curr }
       if (curr.action === 'brightness_step_up') return { brigthnessValue: acc.brigthnessValue + 30 > 254 ? 254 : acc.brigthnessValue + 30, colorTemp: acc.colorTemp, action: 'brigthness' }
       if (curr.action === 'brightness_step_down') return { brigthnessValue: acc.brigthnessValue - 30 < 2 ? 2 : acc.brigthnessValue - 30, colorTemp: acc.colorTemp, action: 'brigthness' }
       if (curr.action === 'color_temperature_step_up') return { brigthnessValue: acc.brigthnessValue, colorTemp: acc.colorTemp + 30 > 454 ? 454 : acc.colorTemp + 30, action: 'color' }
@@ -304,8 +380,23 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set', JSON.stringify({ state: 'TOGGLE' }));
       (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set', JSON.stringify({ state: 'TOGGLE' }));
     }
+    else if (m.action === 'set') {
+      const { brightness, colorTemp } = m.set;
+      const change = brightness === 0 ? { state: 'OFF' }
+        : brightness ? { state: 'ON', brightness }
+        : { color_temp: colorTemp };
+      for (const lamp of LAMPS) (await mqtt.getClusterAsync()).publishMessage(`${lamp}/set`, JSON.stringify(change));
+    }
 
   })
+
+  // What the lamps say they are doing, for the screen. They only report changes: ask them once.
+  mqtt.getClusterAsync().then(cluster => {
+    for (const lamp of LAMPS) {
+      cluster.subscribeData(lamp, content => { lamps[lamp] = content });
+      cluster.publishMessage(`${lamp}/get`, JSON.stringify({ state: '', brightness: '', color_temp: '' }));
+    }
+  });
 })();
 
 
@@ -337,23 +428,29 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
     filter(m => m.action === 'brightness_move_down')
   )
 
+  // Each press is also told to the wall lights and fire stream, so the screen shows it.
   onMediaStream.subscribe(async m => {
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state', 'on');
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
+    await setRelay('tv', true);
+    await setRelay('fire', true);
+    masterSwitchEvents.next({ type: 'fireSocket', on: true });
   })
   offMediaStream.subscribe(async m => {
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/media/state', 'off');
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'off');
+    await setRelay('tv', false);
+    await setRelay('fire', false);
     (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', '0');
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set', JSON.stringify({ brightness: 0 }));
     (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set', JSON.stringify({ brightness: 0 }));
+    lampsWanted = null;  // the lamps' own report is the news now
+    masterSwitchEvents.next({ type: 'allOff' });
   })
 
   onFireStream.subscribe(async m => {
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'on');
+    await setRelay('fire', true);
+    masterSwitchEvents.next({ type: 'fireSocket', on: true });
   })
   offFireStream.subscribe(async m => {
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/fire/state', 'off');
+    await setRelay('fire', false);
+    masterSwitchEvents.next({ type: 'fireSocket', on: false });
   })
 
 
@@ -361,3 +458,90 @@ console.log(`Living Room lights current time ${DateTime.now()}`);
 
 
 
+// --- The kitchen iPad's lights screen ---------------------------------------------------
+
+// The lamps as they last reported (any lit one, else the first): brightness 1 to 254, colour
+// temperature in mireds (250 cool to 454 warm). For 3 seconds after the screen changes them,
+// what it asked for, as they take a moment to report it.
+function lampsState() {
+  const reports = LAMPS.map(lamp => lamps[lamp]).filter(Boolean);
+  const lit = reports.filter(report => report.state === 'ON');
+  const shown = lit[0] || reports[0];
+  const state = shown
+    ? { on: lit.length > 0, brightness: shown.brightness === undefined ? null : shown.brightness, colorTemp: shown.color_temp === undefined ? null : shown.color_temp }
+    : { on: null, brightness: null, colorTemp: null };
+  if (lampsWanted && Date.now() - lampsWanted.at < 3000) {
+    if (lampsWanted.brightness === 0) state.on = false;
+    else if (lampsWanted.brightness) Object.assign(state, { on: true, brightness: lampsWanted.brightness });
+    if (lampsWanted.colorTemp) state.colorTemp = lampsWanted.colorTemp;
+  }
+  return state;
+}
+
+// What the screen shows. wall: on now, brightness 2 to 1000, and whether motion is in charge;
+// fire: lit or not; tv: the media unit's socket, null until something here switches it.
+function screenState() {
+  const wall = living || { lightsOn: false, brightness: 100, lightsArmed: false, fireOn: false };
+  return {
+    wall: { on: wall.lightsOn, brightness: wall.brightness, automatic: wall.lightsArmed },
+    lamps: lampsState(),
+    fire: { on: wall.fireOn },
+    tv: { on: relays.tv },
+  };
+}
+
+const isLevel = (n, max) => Number.isInteger(n) && n >= 0 && n <= max;
+// What the screen asked the lamps for in the last 3 seconds, which a new change adds to.
+const wantedLamps = () => (lampsWanted && Date.now() - lampsWanted.at < 3000 ? lampsWanted : {});
+
+// One change per request: {wall: {brightness}} (0 off), {lamps: {brightness}} (0 off),
+// {lamps: {colorTemp}}, {fire: {on}}, {fire: {flame: true}} or {tv: {on}}.
+async function screenChange(change) {
+  const { wall, lamps: lampsChange, fire, tv } = change || {};
+  if (wall && isLevel(wall.brightness, 1000)) {
+    wallScreen.next({ type: 'screenWall', brightness: wall.brightness && Math.max(2, wall.brightness) });
+  } else if (lampsChange && isLevel(lampsChange.brightness, 254)) {
+    lampsWanted = Object.assign(wantedLamps(), { brightness: lampsChange.brightness, at: Date.now() });
+    lampsScreen.next({ action: 'set', brightness: lampsChange.brightness });
+  } else if (lampsChange && Number.isInteger(lampsChange.colorTemp) && lampsChange.colorTemp >= 150 && lampsChange.colorTemp <= 500) {
+    lampsWanted = Object.assign(wantedLamps(), { colorTemp: lampsChange.colorTemp, at: Date.now() });
+    lampsScreen.next({ action: 'set', colorTemp: lampsChange.colorTemp });
+  } else if (fire && typeof fire.on === 'boolean') {
+    // On is its socket and then the remote's on (it waits for the socket, above); off is
+    // only the remote's off, like the button, so the button can light it again.
+    if (fire.on) await setRelay('fire', true);
+    wallScreen.next({ type: 'screenFire', on: fire.on });
+  } else if (fire && fire.flame === true) {
+    await setRelay('fire', true);
+    wallScreen.next({ type: 'screenFlame' });
+  } else if (tv && typeof tv.on === 'boolean') {
+    await setRelay('tv', tv.on);
+  } else {
+    return false;
+  }
+  return true;
+}
+
+http.createServer((req, res) => {
+  const reply = (status, body) => {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+  if (req.url !== '/living-room') return reply(404, { error: 'only /living-room' });
+  if (req.method === 'GET') return reply(200, screenState());
+  if (req.method !== 'POST') return reply(405, { error: 'GET or POST /living-room' });
+  let body = '';
+  req.on('data', chunk => { body += chunk });
+  req.on('end', async () => {
+    let change;
+    try { change = JSON.parse(body) } catch (e) {}
+    try {
+      if (!(await screenChange(change))) return reply(400, { error: 'send one of {wall: {brightness}}, {lamps: {brightness}}, {lamps: {colorTemp}}, {fire: {on}}, {fire: {flame: true}}, {tv: {on}}' });
+    } catch (error) {
+      console.log(error);
+      return reply(500, { error: error.message });
+    }
+    console.log(`${new Date().toISOString()} screen ${body}`);
+    reply(200, screenState());
+  });
+}).listen(SCREEN_PORT, () => console.log(`screen requests on port ${SCREEN_PORT}`));

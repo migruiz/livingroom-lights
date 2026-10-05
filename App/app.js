@@ -71,6 +71,7 @@ const masterSwitchEvents = new Subject();
 // What the screen is shown. `living` is the wall lights and fire as their stream last left them.
 let living = null;
 const lamps = {};       // each lamp as it last reported, by topic
+const lampsOnline = {}; // whether Zigbee2MQTT can reach each lamp (not when its own switch is off)
 let lampsWanted = null; // what the screen last asked the lamps for, until they report it
 // The relays on the media unit (TV) and the fireplace's socket: null until something here
 // switches them, as they don't report.
@@ -394,6 +395,7 @@ async function setRelay(name, on) {
   mqtt.getClusterAsync().then(cluster => {
     for (const lamp of LAMPS) {
       cluster.subscribeData(lamp, content => { lamps[lamp] = content });
+      cluster.subscribeData(`${lamp}/availability`, content => { lampsOnline[lamp] = content.state === 'online' });
       cluster.publishMessage(`${lamp}/get`, JSON.stringify({ state: '', brightness: '', color_temp: '' }));
     }
   });
@@ -461,15 +463,20 @@ async function setRelay(name, on) {
 // --- The kitchen iPad's lights screen ---------------------------------------------------
 
 // The lamps as they last reported (any lit one, else the first): brightness 1 to 254, colour
-// temperature in mireds (250 cool to 454 warm). For 3 seconds after the screen changes them,
-// what it asked for, as they take a moment to report it.
+// temperature in mireds (250 cool to 454 warm), and reachable: false when Zigbee2MQTT can't reach
+// either (switched off at the lamp), null until it has said. For 3 seconds after the screen
+// changes them, what it asked for, as they take a moment to report it.
 function lampsState() {
+  const known = LAMPS.filter(lamp => lamp in lampsOnline);
+  const reachable = known.length ? known.some(lamp => lampsOnline[lamp]) : null;
+  if (reachable === false) return { on: false, brightness: null, colorTemp: null, reachable };
   const reports = LAMPS.map(lamp => lamps[lamp]).filter(Boolean);
   const lit = reports.filter(report => report.state === 'ON');
   const shown = lit[0] || reports[0];
   const state = shown
     ? { on: lit.length > 0, brightness: shown.brightness === undefined ? null : shown.brightness, colorTemp: shown.color_temp === undefined ? null : shown.color_temp }
     : { on: null, brightness: null, colorTemp: null };
+  state.reachable = reachable;
   if (lampsWanted && Date.now() - lampsWanted.at < 3000) {
     if (lampsWanted.brightness === 0) state.on = false;
     else if (lampsWanted.brightness) Object.assign(state, { on: true, brightness: lampsWanted.brightness });

@@ -76,6 +76,10 @@ let lampsWanted = null; // what the screen last asked the lamps for, until they 
 // The relays on the media unit (TV) and the fireplace's socket: null until something here
 // switches them, as they don't report.
 const relays = { tv: null, fire: null, fireOnAt: 0 };
+// When the living room's sensor or the one at the foot of the stairs last saw someone (from
+// the start, until one has), for the Samsung tablet in the living room: its screen goes dark
+// once both have been quiet for a while, day or night.
+let lastMotionAt = Date.now();
 
 async function setRelay(name, on) {
   const cluster = await mqtt.getClusterAsync();
@@ -172,6 +176,7 @@ async function setRelay(name, on) {
     var mqttCluster = await mqtt.getClusterAsync()
     mqttCluster.subscribeData('zigbee2mqtt/0x00158d00056bad56', function (content) {
       if (content.occupancy) {
+        lastMotionAt = Date.now();
         subscriber.next(content)
       }
     });
@@ -180,6 +185,7 @@ async function setRelay(name, on) {
     var mqttCluster = await mqtt.getClusterAsync()
     mqttCluster.subscribeData('zigbee2mqtt/0x00158d000566c0cc', function (content) {
       if (content.occupancy) {
+        lastMotionAt = Date.now();
         subscriber.next(content)
       }
     });
@@ -486,7 +492,8 @@ function lampsState() {
 }
 
 // What the screen shows. wall: on now, brightness 2 to 1000, and whether motion is in charge;
-// fire: lit or not; tv: the media unit's socket, null until something here switches it.
+// fire: lit or not; tv: the media unit's socket, null until something here switches it. Also
+// how many seconds both motion sensors have been quiet, which the Samsung tablet's screen follows.
 function screenState() {
   const wall = living || { lightsOn: false, brightness: 100, lightsArmed: false, fireOn: false };
   return {
@@ -494,6 +501,7 @@ function screenState() {
     lamps: lampsState(),
     fire: { on: wall.fireOn },
     tv: { on: relays.tv },
+    quietSeconds: Math.round((Date.now() - lastMotionAt) / 1000),
   };
 }
 

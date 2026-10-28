@@ -65,8 +65,6 @@ const FIRE_WAKE_UP = 3 * 1000;
 // and to the lamps.
 const wallScreen = new Subject();
 const lampsScreen = new Subject();
-// The master switch's presses that change the wall lights or the fire behind their streams' backs.
-const masterSwitchEvents = new Subject();
 
 // What the screen is shown. `living` is the wall lights and fire as their stream last left them.
 let living = null;
@@ -238,8 +236,8 @@ async function setRelay(name, on) {
   )
 
   // Screen changes: {type: 'screenWall', brightness} (0 is off), {type: 'screenFire', on},
-  // {type: 'screenFlame'}. Master switch: {type: 'fireSocket', on}, {type: 'allOff'}.
-  const screenStream = merge(wallScreen, masterSwitchEvents)
+  // {type: 'screenFlame'}.
+  const screenStream = wallScreen
 
   // Whether motion is in charge is kept apart for the wall lights and the fire (lightsArmed,
   // fireArmed), so the screen can switch one without the other. The button, sunrise and sunset
@@ -263,10 +261,6 @@ async function setRelay(name, on) {
       // The screen's fire switch: on or off, and it stays so whatever motion does.
       if (curr.type === 'screenFire') return { ...acc, type: curr.type, fireArmed: false, fireOn: curr.on }
       if (curr.type === 'screenFlame') return { ...acc, type: curr.type, fireArmed: false, fireOn: true, changeFirePlaceColorReqNumber: acc.changeFirePlaceColorReqNumber + 1 }
-      // The master switch cut or restored the fire's socket (the fire lights by itself when
-      // its socket comes on), or turned everything off: only noted, the switch did it.
-      if (curr.type === 'fireSocket') return { ...acc, type: curr.type, fireOn: curr.on }
-      if (curr.type === 'allOff') return { ...acc, type: curr.type, lightsOn: false, fireOn: false }
 
     }, { type: 'init', lightsArmed: false, fireArmed: false, occupied: false, lightsOn: false, brightness: 100, fireOn: false, changeFirePlaceColorReqNumber: 0 }),
     filter(e => e.type !== 'omit'),
@@ -295,8 +289,6 @@ async function setRelay(name, on) {
     distinctUntilChanged((prev,curr) => {
      return prev.fireOn===curr.fireOn
     }),
-    // The master switch already did it, with the fire's socket.
-    filter(({type}) => type !== 'fireSocket' && type !== 'allOff'),
     map(({fireOn}) => fireOn)
   )
 
@@ -412,57 +404,8 @@ async function setRelay(name, on) {
 
 
 
-//master switch
-(function () {
-  const remoteStream = new Observable(async subscriber => {
-    var mqttCluster = await mqtt.getClusterAsync()
-    mqttCluster.subscribeData('zigbee2mqtt/0xc4d8c8fffe39a866', function (content) {
-      subscriber.next(content)
-    });
-  });
-  const sharedStream = remoteStream.pipe(share())
-
-  const onMediaStream = sharedStream.pipe(
-    filter(m => m.action === 'on')
-  )
-  const offMediaStream = sharedStream.pipe(
-    filter(m => m.action === 'off')
-  )
-  const onFireStream = sharedStream.pipe(
-    filter(m => m.action === 'brightness_move_up')
-  )
-
-  const offFireStream = sharedStream.pipe(
-    filter(m => m.action === 'brightness_move_down')
-  )
-
-  // Each press is also told to the wall lights and fire stream, so the screen shows it.
-  onMediaStream.subscribe(async m => {
-    await setRelay('tv', true);
-    await setRelay('fire', true);
-    masterSwitchEvents.next({ type: 'fireSocket', on: true });
-  })
-  offMediaStream.subscribe(async m => {
-    await setRelay('tv', false);
-    await setRelay('fire', false);
-    (await mqtt.getClusterAsync()).publishMessage('livingroom/wall/light', '0');
-    (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed8947e/set', JSON.stringify({ brightness: 0 }));
-    (await mqtt.getClusterAsync()).publishMessage('zigbee2mqtt/0x2c1165fffed897d3/set', JSON.stringify({ brightness: 0 }));
-    lampsWanted = null;  // the lamps' own report is the news now
-    masterSwitchEvents.next({ type: 'allOff' });
-  })
-
-  onFireStream.subscribe(async m => {
-    await setRelay('fire', true);
-    masterSwitchEvents.next({ type: 'fireSocket', on: true });
-  })
-  offFireStream.subscribe(async m => {
-    await setRelay('fire', false);
-    masterSwitchEvents.next({ type: 'fireSocket', on: false });
-  })
-
-
-})();
+// The IKEA RODRET remote 0xc4d8c8fffe39a866 (I = TV and fire sockets on, O = everything off,
+// hold I/O = fire socket on/off) moved to the utility room on 28/10/2026.
 
 
 
